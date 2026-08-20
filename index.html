@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoMap Palembang - WebGIS Pengelolaan Sampah Kota Palembang</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+    <style>
+        #map { height: calc(100vh - 64px); width: 100%; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased overflow-hidden">
+
+    <nav class="h-16 bg-emerald-700 text-white flex justify-between items-center px-4 md:px-8 shadow-lg z-20 relative">
+        <div class="flex items-center space-x-3">
+            <i class="fa-solid fa-recycle text-2xl text-emerald-300"></i>
+            <div>
+                <h1 class="font-bold text-lg leading-tight">EcoMap Palembang</h1>
+                <p class="text-xs text-emerald-200">Layanan & Jangkauan Pengelolaan Sampah</p>
+            </div>
+        </div>
+        
+        <div class="flex space-x-2 md:space-x-4">
+            <button onclick="toggleModal('modal-data')" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-1">
+                <i class="fa-solid fa-database"></i>
+                <span class="hidden md:inline">Sumber & Download Data</span>
+            </button>
+            <button onclick="toggleModal('modal-cv')" class="bg-emerald-800 hover:bg-emerald-900 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-1">
+                <i class="fa-solid fa-user-tie"></i>
+                <span class="hidden md:inline">Profil & Kontak</span>
+            </button>
+        </div>
+    </nav>
+
+    <div id="map" class="z-10"></div>
+
+    <div id="modal-data" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 relative">
+            <button onclick="toggleModal('modal-data')" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800">
+                <i class="fa-solid fa-xmark text-2xl"></i>
+            </button>
+            
+            <h2 class="text-xl font-bold text-emerald-800 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-folder-open"></i> Sumber & Repositori Data Spasial
+            </h2>
+            <p class="text-gray-600 text-sm mb-4">
+                Seluruh data spasial yang digunakan dalam WebGIS ini dikelola melalui format GeoJSON dan CSV. Anda dapat mengunduhnya secara bebas untuk keperluan akademis maupun perencanaan DLHK.
+            </p>
+
+            <div class="overflow-x-auto border border-gray-200 rounded-lg mb-4">
+                <table class="w-full text-sm text-left text-gray-600">
+                    <thead class="text-xs text-gray-700 uppercase bg-emerald-50 border-b">
+                        <tr>
+                            <th class="px-4 py-3">Nama Layer / Data</th>
+                            <th class="px-4 py-3">Format</th>
+                            <th class="px-4 py-3 text-center">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        <tr>
+                            <td class="px-4 py-3 font-medium">Sebaran Bank Sampah & TPS3R</td>
+                            <td class="px-4 py-3"><span class="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">GeoJSON</span></td>
+                            <td class="px-4 py-3 text-center">
+                                <a href="APP/DATA/01_Bank_Sampah.geojson" download class="text-emerald-600 hover:underline font-semibold">Download</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-3 font-medium">Batas Administrasi Kecamatan</td>
+                            <td class="px-4 py-3"><span class="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">GeoJSON</span></td>
+                            <td class="px-4 py-3 text-center">
+                                <a href="APP/DATA/BASE_Adm_Kec_Palembang.geojson" download class="text-emerald-600 hover:underline font-semibold">Download</a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-3 font-medium">Jumlah Penduduk Per Kecamatan 2025</td>
+                            <td class="px-4 py-3"><span class="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded">CSV</span></td>
+                            <td class="px-4 py-3 text-center">
+                                <a href="APP/DATA/Data_Jumlah_Penduduk_Per_Kecamatan_Palembang_2025.csv" download class="text-emerald-600 hover:underline font-semibold">Download</a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="bg-gray-50 p-4 rounded-lg border">
+                <h3 class="font-semibold text-gray-700 text-sm mb-1">Metode & Sumber Referensi:</h3>
+                <p class="text-xs text-gray-500">Data bersumber dari Dinas Lingkungan Hidup dan Kebersihan (DLHK) Kota Palembang, OpenStreetMap, serta BPS Kota Palembang.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-cv" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 relative">
+            <button onclick="toggleModal('modal-cv')" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800">
+                <i class="fa-solid fa-xmark text-2xl"></i>
+            </button>
+            
+            <div class="text-center mb-6">
+                <div class="w-20 h-20 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-3 border-2 border-emerald-500">
+                    <i class="fa-solid fa-user"></i>
+                </div>
+                <h2 class="text-xl font-bold text-gray-800">Pengembang WebGIS</h2>
+                <p class="text-emerald-600 text-sm font-medium">GIS Analyst & Web Developer</p>
+            </div>
+
+            <div class="space-y-3 mb-6 text-sm">
+                <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <i class="fa-solid fa-envelope text-emerald-600 text-lg"></i>
+                    <div>
+                        <p class="text-xs text-gray-400">Email</p>
+                        <p class="text-gray-700 font-medium">emailanda@domain.com</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <i class="fa-brands fa-github text-emerald-600 text-lg"></i>
+                    <div>
+                        <p class="text-xs text-gray-400">GitHub Repository</p>
+                        <a href="https://github.com/Supriyadi-ID/Final_Project_MAPID_Bootcamp_Batch3" target="_blank" class="text-emerald-600 font-medium hover:underline">Lihat Repositori Project</a>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <i class="fa-solid fa-phone text-emerald-600 text-lg"></i>
+                    <div>
+                        <p class="text-xs text-gray-400">Kontak / WhatsApp</p>
+                        <p class="text-gray-700 font-medium">+62 812-XXXX-XXXX</p>
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="toggleModal('modal-cv')" class="w-full bg-emerald-700 text-white py-2 rounded-lg font-medium hover:bg-emerald-800 transition">
+                Tutup Profil
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 1. INISIALISASI PETA (Koordinat Tengah Palembang)
+        const map = L.map('map').setView([-2.976, 104.775], 12);
+
+        // 2. DEFINE BASEMAPS (OSM & ESRI Satelit)
+        const osmBase = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        });
+
+        const esriSatelliteBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        });
+
+        // Set default basemap ke OSM
+        osmBase.addTo(map);
+
+        // 3. LAYER GROUPS UNTUK LAYER CONTROL
+        const layerBankSampah = L.layerGroup().addTo(map);
+        const layerKecamatan = L.layerGroup().addTo(map);
+
+        // 4. MEMANGGUL DATA GEOJSON (Contoh memanggil Bank Sampah)
+        fetch('APP/DATA/01_Bank_Sampah.geojson')
+            .then(res => res.json())
+            .then(data => {
+                L.geoJSON(data, {
+                    onEachFeature: function(feature, layer) {
+                        layer.bindPopup(`
+                            <div class="p-1">
+                                <h3 class="font-bold text-emerald-800 text-sm mb-1">${feature.properties.nama || 'Fasilitas Sampah'}</h3>
+                                <p class="text-xs"><b>Jenis:</b> ${feature.properties.jenis || '-'}</p>
+                                <p class="text-xs"><b>Kecamatan:</b> ${feature.properties.kecamatan || '-'}</p>
+                                <p class="text-xs"><b>Pengelola:</b> ${feature.properties.kelola || '-'}</p>
+                            </div>
+                        `);
+                    }
+                }).addTo(layerBankSampah);
+            })
+            .catch(err => console.log('Data GeoJSON belum terhubung:', err));
+
+        // 5. LAYER CONTROL (OSM vs Esri Satelit + Layer Toggle)
+        const baseMaps = {
+            "OpenStreetMap (Peta Jalan)": osmBase,
+            "Citra Satelit ESRI": esriSatelliteBase
+        };
+
+        const overlayMaps = {
+            "Sebaran Fasilitas Sampah": layerBankSampah,
+            "Batas Kecamatan": layerKecamatan
+        };
+
+        L.control.layers(baseMaps, overlayMaps, { position: 'topright' }).addTo(map);
+
+        // 6. FUNGSI UTILITY POP-UP MODAL
+        function toggleModal(modalId) {
+            const modal = document.getElementById(modalId);
+            modal.classList.toggle('hidden');
+        }
+    </script>
+</body>
+</html>
