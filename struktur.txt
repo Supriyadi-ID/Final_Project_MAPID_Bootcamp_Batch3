@@ -1,0 +1,18 @@
+EcoMap Palembang/
+├── index.html
+├── APP/
+│   ├── DATA/
+│   │	├── 00_Bank_Sampah_Induk.geojson
+│   │	├──	01_Bank_Sampah.geojson
+│   │	├──	02_TPS3R_atau_UPS.geojson
+│   │	├──	03_TPA_atau_TPST.geojson
+│   │	├──	04_Komposting_Skala_RTRW.geojson
+│   │	├──	05_Rumah_Kompos.geojson
+│   │	├──	06_Biodigester.geojson
+│   │	├──	07_Pengelolaan_Sampah_Sektor_Informal_2022.geojson
+│   │	├──	BASE_Adm_Kec_Palembang.geojson
+│   │	├──	BASE_Jaringan_Jalan_Palembang_OSM.geojson
+│   │	└── Data_Jumlah_Penduduk_Per_Kecamatan_Palembang_2025.csv
+├── CSS/
+├── DOC/
+├── JS/
