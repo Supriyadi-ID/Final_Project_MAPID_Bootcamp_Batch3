@@ -1,19 +1,23 @@
 // Global Map Variables
 let map;
 let kecamatanLayer;
-let roadLayer;
-let facilitiesLayerGroup = L.layerGroup();
+let pemukimanLayer;
+let facilitiesLayerGroup = L.markerClusterGroup({
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    zoomToBoundsOnClick: true,
+    maxClusterRadius: 50 // optional tweak for tighter clustering
+});
 let bufferLayerGroup = L.layerGroup();
 let underservedLayerGroup = L.layerGroup();
 let isochroneLinesGroup = L.layerGroup();
-let potentialLayerGroup = L.layerGroup();
-let startingPointMarker = null;
 
 // Data Storage
 let kecamatanData = null;
-let roadData = null;
+let pemukimanData = null;
 let facilitiesData = {}; // key: name, value: { layer, geojson, config, visible }
 let populationData = {};
+let pemukimanAreaKec = {}; // To store actual calculated residential area in km2 per kecamatan
 
 const API_PATH = 'APP/DATA/';
 const SPEED_KMH = 30; // Average urban speed
@@ -34,96 +38,69 @@ document.addEventListener("DOMContentLoaded", initMap);
 
 function initMap() {
     map = L.map('map', { zoomControl: false }).setView([-2.976, 104.775], 12);
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    L.control.zoom({ position: 'topright' }).addTo(map);
 
-    const googleMap = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google' });
     const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google' });
     const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google' });
     
+    const esriWorldImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { 
+        maxZoom: 20, 
+        maxNativeZoom: 19,
+        attribution: 'Tiles &copy; Esri' 
+    });
+    
+    const openStreetMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 20,
+        maxNativeZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+    });
+    
     googleSat.addTo(map); // Default basemap
 
-    L.control.layers({"Google Satellite": googleSat, "Google Hybrid": googleHybrid, "Google Map": googleMap}, {}, { position: 'bottomright' }).addTo(map);
+    const baseMaps = {
+        "Google Satellite": googleSat, 
+        "Google Hybrid": googleHybrid, 
+        "Esri World Imagery": esriWorldImagery,
+        "OpenStreetMap": openStreetMap
+    };
+
+    L.control.layers(baseMaps, {}, { position: 'topright' }).addTo(map);
 
     facilitiesLayerGroup.addTo(map);
     bufferLayerGroup.addTo(map);
     underservedLayerGroup.addTo(map);
     isochroneLinesGroup.addTo(map);
-    potentialLayerGroup.addTo(map);
 
-    // Map click for routing start point
-    map.on('click', function(e) {
-        if (startingPointMarker) {
-            startingPointMarker.setLatLng(e.latlng);
+    // Toggle facility labels class based on zoom level (approx > 1:10000 is zoom 15/16)
+    map.on('zoomend', function() {
+        if (map.getZoom() >= 16) {
+            document.getElementById('map').classList.add('show-facility-labels');
         } else {
-            startingPointMarker = L.marker(e.latlng, {draggable: true}).addTo(map)
-                .bindPopup("Titik Awal Rute").openPopup();
+            document.getElementById('map').classList.remove('show-facility-labels');
         }
     });
 
+    // Map click to clear highlight
+    map.on('click', function(e) {
+        if (highlightedKecamatan) {
+            kecamatanLayer.resetStyle(highlightedKecamatan);
+            highlightedKecamatan = null;
+        }
+    });
+
+    // Create custom panes for z-index ordering (400 is leaflet overlayPane)
+    map.createPane('kecamatanPane');
+    map.getPane('kecamatanPane').style.zIndex = 400; // Bottom layer
+    map.createPane('pemukimanPane');
+    map.getPane('pemukimanPane').style.zIndex = 405; // Above kecamatan
+
     loadPopulationData().then(async () => {
+        await loadPemukimanData(); 
         await loadKecamatanData();
-        await loadRoadNetwork(); 
         await loadFacilitiesData();
     });
 
     setupEvents();
-}
-
-window.routeTo = function(lat, lng) {
-    if (!startingPointMarker) {
-        alert("Silakan klik pada peta terlebih dahulu untuk menentukan Titik Awal rute.");
-        return;
-    }
-    
-    // Close popups immediately
-    map.closePopup();
-
-    const overlay = document.getElementById('loading-overlay');
-    document.getElementById('loading-text').innerText = "Memproses Rute...";
-    overlay.classList.remove('hidden');
-
-    const mode = document.getElementById('route-mode').value;
-    const start = startingPointMarker.getLatLng();
-    
-    if (window.routingControl) {
-        map.removeControl(window.routingControl);
-    }
-    
-    window.routingControl = L.Routing.control({
-        waypoints: [
-            start,
-            L.latLng(lat, lng)
-        ],
-        router: L.Routing.osrmv1({
-            serviceUrl: 'https://router.project-osrm.org/route/v1',
-            profile: mode
-        }),
-        routeWhileDragging: false,
-        language: 'id',
-        showAlternatives: false,
-        fitSelectedRoutes: true,
-        lineOptions: {
-            styles: [{color: '#3b82f6', opacity: 0.8, weight: 6}]
-        },
-        createMarker: function(i, wp) {
-            if (i === 0) return null; // We already have starting point marker
-            return null; // Don't create default markers
-        }
-    }).addTo(map);
-
-    // Hide overlay shortly after sending request
-    setTimeout(() => { overlay.classList.add('hidden'); }, 1000);
-}
-
-window.clearRoute = function() {
-    if (window.routingControl) {
-        map.removeControl(window.routingControl);
-        window.routingControl = null;
-    }
-    if (startingPointMarker) {
-        map.removeLayer(startingPointMarker);
-        startingPointMarker = null;
-    }
 }
 
 async function loadPopulationData() {
@@ -148,31 +125,59 @@ async function loadKecamatanData() {
         const response = await fetch(API_PATH + 'BASE_Adm_Kec_Palembang.geojson');
         kecamatanData = await response.json();
         kecamatanLayer = L.geoJSON(kecamatanData, {
-            style: { color: '#64748b', weight: 1.5, fillOpacity: 0.1, dashArray: '4' },
+            style: { color: '#ffffff', weight: 2.5, fillColor: '#334155', fillOpacity: 0.2, dashArray: '4' },
             onEachFeature: (feature, layer) => {
                 const kecName = feature.properties.NAMOBJ;
                 const popData = populationData[(kecName || "").toUpperCase()];
                 let pop = 0; let kepadatan = 0;
+                let areaKm2 = turf.area(feature) / 1000000;
+                
                 if(popData) {
                     pop = popData.pop;
-                    const areaKm2 = turf.area(feature) / 1000000;
                     kepadatan = Math.round(pop / areaKm2);
                 }
                 
-                layer.bindTooltip(`<b>${kecName}</b><br>Penduduk: ${pop.toLocaleString('id-ID')} jiwa<br>Kepadatan: ${kepadatan.toLocaleString('id-ID')} jiwa/km²`, { permanent: false, direction: 'center', className: 'text-xs bg-white/80 border-none shadow-sm text-gray-700 p-2 rounded' });
+                // Perkiraan area pemukiman dari data Google Building Footprint
+                let estimasiAreaPemukiman = pemukimanAreaKec[kecName.toUpperCase()] || 0;
+                estimasiAreaPemukiman = estimasiAreaPemukiman.toFixed(2);
+                
+                // Estimasi produksi sampah: 0.7 kg / jiwa / hari
+                let estimasiSampahTon = (pop * 0.7 / 1000).toFixed(2);
+                
+                layer.bindPopup(`
+                    <div class="p-2 min-w-[220px]">
+                        <h3 class="font-bold text-emerald-800 text-sm border-b pb-1 mb-2">Kec. ${kecName}</h3>
+                        <table class="w-full text-[11px] text-gray-700">
+                            <tr><td class="py-1">Populasi (2025):</td><td class="font-semibold text-right">${pop.toLocaleString('id-ID')} jiwa</td></tr>
+                            <tr><td class="py-1 border-t">Luas Area Pemukiman:</td><td class="font-semibold text-right border-t">${estimasiAreaPemukiman} km²</td></tr>
+                            <tr><td class="py-1 border-t">Estimasi Produksi Sampah:</td><td class="font-semibold text-right border-t">${estimasiSampahTon} Ton/hari</td></tr>
+                        </table>
+                    </div>
+                `);
                 
                 layer.on('click', (e) => {
+                    L.DomEvent.stopPropagation(e.originalEvent); // Prevent map click
+                    
+                    if (highlightedKecamatan === layer) {
+                        // Jika di-klik lagi, reset highlight dan tutup popup
+                        kecamatanLayer.resetStyle(layer);
+                        highlightedKecamatan = null;
+                        layer.closePopup();
+                        return;
+                    }
+
                     if (highlightedKecamatan) {
                         kecamatanLayer.resetStyle(highlightedKecamatan);
                     }
                     highlightedKecamatan = layer;
                     layer.setStyle({
-                        weight: 3,
-                        color: '#0ea5e9',
+                        weight: 3.5,
+                        color: '#facc15',
                         dashArray: '',
-                        fillOpacity: 0.3
+                        fillOpacity: Math.min(1, (parseFloat(document.getElementById('kec-opacity').value) || 30) / 100 + 0.3)
                     });
                     layer.bringToFront();
+                    layer.openPopup();
                 });
 
                 const select = document.getElementById('kecamatan-select');
@@ -182,14 +187,22 @@ async function loadKecamatanData() {
             }
         }).addTo(map);
 
-        const controlsContainer = document.getElementById('base-controls');
-        controlsContainer.innerHTML += `
-            <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-1 rounded mb-2">
-                <input type="checkbox" id="chk-kec" checked class="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4" onchange="toggleKecamatan(this.checked)">
-                <span class="w-4 h-4 border-2 border-slate-500 bg-slate-200 inline-block opacity-50"></span>
-                <span class="text-gray-700 flex-1 font-medium">Batas Administrasi Kecamatan</span>
-            </label>
-        `;
+        const controlsContainer = document.getElementById('kecamatan-control-container');
+        if(controlsContainer) {
+            controlsContainer.innerHTML = `
+                <div class="mb-2">
+                    <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
+                        <input type="checkbox" id="chk-kec" checked class="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4" onchange="toggleKecamatan(this.checked)">
+                        <span class="w-4 h-4 border-2 border-slate-700 bg-slate-400 inline-block opacity-70"></span>
+                        <span class="text-gray-700 flex-1 font-medium">Batas Administrasi Kecamatan</span>
+                    </label>
+                    <div class="pl-6 pr-2 py-1 flex items-center space-x-2">
+                        <span class="text-[10px] text-gray-500">Transparansi:</span>
+                        <input type="range" id="kec-opacity" min="0" max="100" value="30" class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer" oninput="changeKecamatanOpacity(this.value)">
+                    </div>
+                </div>
+            `;
+        }
     } catch (e) { console.error("Kecamatan data error", e); }
 }
 
@@ -200,51 +213,57 @@ window.toggleKecamatan = function(isVisible) {
     }
 }
 
-async function loadRoadNetwork() {
-    try {
-        const response = await fetch(API_PATH + 'BASE_Jaringan_Jalan_Palembang_OSM.geojson');
-        roadData = await response.json();
-        roadLayer = L.geoJSON(roadData, {
-            style: function(feature) {
-                const type = feature.properties.highway || 'unclassified';
-                let color = '#9ca3af'; // default gray
-                let weight = 0.5;
-                let opacity = 0.6;
-                
-                if (type === 'motorway' || type === 'trunk') {
-                    color = '#ef4444'; weight = 3; opacity = 1;
-                } else if (type === 'primary') {
-                    color = '#f97316'; weight = 2.5; opacity = 1;
-                } else if (type === 'secondary') {
-                    color = '#eab308'; weight = 2; opacity = 0.9;
-                } else if (type === 'tertiary') {
-                    color = '#fde047'; weight = 1.5; opacity = 0.8;
-                } else if (type === 'residential') {
-                    color = '#e5e7eb'; weight = 1; opacity = 0.7;
-                }
-
-                return { color: color, weight: weight, opacity: opacity };
-            }
-        });
-        
-        const controlsContainer = document.getElementById('base-controls');
-        controlsContainer.innerHTML += `
-            <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-1 rounded mb-2 pb-2 border-b">
-                <input type="checkbox" id="chk-road" class="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4" onchange="toggleRoad(this.checked)">
-                <div class="flex flex-col space-y-0.5">
-                    <span style="width: 16px; height: 2px; background-color: #ef4444;"></span>
-                    <span style="width: 16px; height: 1.5px; background-color: #f97316;"></span>
-                </div>
-                <span class="text-gray-700 flex-1 font-medium ml-1">Jaringan Jalan</span>
-            </label>
-        `;
-    } catch (e) { console.error("Road data error", e); }
+window.changeKecamatanOpacity = function(val) {
+    if (kecamatanLayer) {
+        kecamatanLayer.setStyle({ fillOpacity: val / 100 });
+        // Re-apply highlight if exists
+        if (highlightedKecamatan) {
+            highlightedKecamatan.setStyle({ fillOpacity: Math.min(1, (val / 100) + 0.2) });
+        }
+    }
 }
 
-window.toggleRoad = function(isVisible) {
-    if (roadLayer) {
-        if (isVisible) map.addLayer(roadLayer);
-        else map.removeLayer(roadLayer);
+async function loadPemukimanData() {
+    try {
+        const response = await fetch(API_PATH + 'BASE_Area_Pemukiman_(Google_Building_Footprint_v3).geojson');
+        pemukimanData = await response.json();
+        
+        // Calculate areas
+        pemukimanData.features.forEach(f => {
+            const kecName = (f.properties.NAMOBJ || "").toUpperCase();
+            if (kecName) {
+                pemukimanAreaKec[kecName] = turf.area(f) / 1000000;
+            }
+        });
+
+        pemukimanLayer = L.geoJSON(pemukimanData, {
+            pane: 'pemukimanPane',
+            style: { color: '#f97316', weight: 0.5, fillColor: '#fdba74', fillOpacity: 0.5, interactive: false }
+        });
+        
+        // By default, maybe don't add to map because it's heavy, or add it if requested?
+        // User said: "layer area pemukiman berada diatas layer Batas Administrasi Kecamatan."
+        pemukimanLayer.addTo(map);
+
+        const container = document.getElementById('pemukiman-control-container');
+        if(container) {
+            container.innerHTML = `
+                <div class="mb-2">
+                    <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
+                        <input type="checkbox" id="chk-pemukiman" checked class="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4" onchange="togglePemukiman(this.checked)">
+                        <span class="w-4 h-4 border border-orange-500 bg-orange-300 inline-block opacity-70"></span>
+                        <span class="text-gray-700 flex-1 font-medium">Area Pemukiman</span>
+                    </label>
+                </div>
+            `;
+        }
+    } catch (e) { console.error("Pemukiman data error", e); }
+}
+
+window.togglePemukiman = function(isVisible) {
+    if (pemukimanLayer) {
+        if (isVisible) map.addLayer(pemukimanLayer);
+        else map.removeLayer(pemukimanLayer);
     }
 }
 
@@ -256,24 +275,63 @@ async function loadFacilitiesData() {
         try {
             const response = await fetch(API_PATH + config.file);
             const data = await response.json();
+            const count = data.features ? data.features.length : 0;
             
             const iconHtml = `<span style="background-color: ${config.color}; width:24px; height:24px; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; border-radius:50%; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.3);"><i class="fa-solid ${config.icon}"></i></span>`;
             const icon = L.divIcon({ className: 'custom-div-icon', html: iconHtml, iconSize: [24, 24], iconAnchor: [12, 12] });
+            
+            const isInduk = config.name === 'Bank Sampah Induk';
 
             const layer = L.geoJSON(data, {
-                pointToLayer: (feature, latlng) => L.marker(latlng, { icon: icon }),
+                pointToLayer: (feature, latlng) => {
+                    const marker = L.marker(latlng, { 
+                        icon: icon,
+                        zIndexOffset: isInduk ? 1000 : 0 
+                    });
+                    
+                    const p = feature.properties;
+                    let displayNama = p.nama || "";
+                    let jenis = p.jenis || "";
+
+                    if (config.name === 'Fasilitas Lain (Sektor Informal)') {
+                        if (jenis && displayNama) {
+                            if (!displayNama.toLowerCase().startsWith(jenis.toLowerCase())) {
+                                displayNama = jenis + " " + displayNama;
+                            }
+                        } else {
+                            displayNama = displayNama || jenis || config.name;
+                        }
+                    } else {
+                        displayNama = displayNama || config.name;
+                    }
+
+                    // Add tooltip that will only be visible via CSS at high zoom levels
+                    marker.bindTooltip(displayNama, {
+                        permanent: true,
+                        direction: 'bottom',
+                        className: 'facility-label',
+                        offset: [0, 10]
+                    });
+                    return marker;
+                },
                 onEachFeature: (feature, layer) => {
                     const p = feature.properties;
-                    // For routing
-                    let lat = null, lng = null;
-                    if(feature.geometry && feature.geometry.coordinates) {
-                        lng = feature.geometry.coordinates[0];
-                        lat = feature.geometry.coordinates[1];
-                    }
-                    
-                    const btnHtml = (lat && lng) ? `<button onclick="routeTo(${lat}, ${lng})" class="mt-2 w-full bg-blue-100 hover:bg-blue-200 text-blue-700 font-semibold py-1 rounded text-xs transition"><i class="fa-solid fa-route"></i> Rute ke Sini</button>` : '';
+                    let displayNama = p.nama || "";
+                    let jenis = p.jenis || "";
 
-                    layer.bindPopup(`<div class="p-1 min-w-[200px]"><h3 class="font-bold text-emerald-800 text-sm border-b pb-1 mb-2">${p.nama || config.name}</h3><div class="text-xs space-y-1"><p><span class="text-gray-500">Jenis:</span> ${p.jenis || config.name}</p><p><span class="text-gray-500">Kecamatan:</span> ${p.kecamatan || '-'}</p></div>${btnHtml}</div>`);
+                    if (config.name === 'Fasilitas Lain (Sektor Informal)') {
+                        if (jenis && displayNama) {
+                            if (!displayNama.toLowerCase().startsWith(jenis.toLowerCase())) {
+                                displayNama = jenis + " " + displayNama;
+                            }
+                        } else {
+                            displayNama = displayNama || jenis || config.name;
+                        }
+                    } else {
+                        displayNama = displayNama || config.name;
+                    }
+
+                    layer.bindPopup(`<div class="p-1 min-w-[200px]"><h3 class="font-bold text-emerald-800 text-sm border-b pb-1 mb-2">${displayNama}</h3><div class="text-xs space-y-1"><p><span class="text-gray-500">Jenis:</span> ${p.jenis || config.name}</p><p><span class="text-gray-500">Kecamatan:</span> ${p.kecamatan || '-'}</p></div></div>`);
                 }
             });
 
@@ -287,9 +345,9 @@ async function loadFacilitiesData() {
             const id = 'chk-' + config.name.replace(/\s+/g, '-');
             controlsContainer.innerHTML += `
                 <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
-                    <input type="checkbox" id="${id}" ${isVisible ? 'checked' : ''} class="rounded text-emerald-600 h-4 w-4" onchange="toggleFacility('${config.name}', this.checked)">
-                    <span class="w-4 h-4 rounded-full border border-white shadow-sm inline-block" style="background-color: ${config.color}"></span>
-                    <span class="text-gray-700 flex-1">${config.name}</span>
+                    <input type="checkbox" id="${id}" ${isVisible ? 'checked' : ''} class="rounded text-emerald-600 h-4 w-4 shrink-0" onchange="toggleFacility('${config.name}', this.checked)">
+                    <div class="scale-75 origin-left shrink-0">${iconHtml}</div>
+                    <span class="text-gray-700 flex-1 text-sm">${config.name} <span class="text-gray-400 text-[10px]">(${count})</span></span>
                 </label>
             `;
         } catch (e) { console.error("Facility data error", e); }
@@ -309,59 +367,8 @@ function setupEvents() {
         document.getElementById('buffer-value').textContent = e.target.value + ' km';
     });
     document.getElementById('btn-analyze').addEventListener('click', runGeoprocessing);
-    document.getElementById('btn-potential').addEventListener('click', findPotential);
     document.getElementById('btn-clear').addEventListener('click', clearAnalysis);
     document.getElementById('kecamatan-select').addEventListener('change', updateSummary);
-}
-
-function findPotential() {
-    potentialLayerGroup.clearLayers();
-    
-    let underservedFeatures = [];
-    underservedLayerGroup.eachLayer(layer => {
-        if(layer.toGeoJSON) {
-            underservedFeatures.push(layer.toGeoJSON());
-        }
-    });
-    
-    if(underservedFeatures.length === 0) {
-        alert("Silakan jalankan 'Hitung & Analisis' terlebih dahulu, atau area sudah terlayani 100%.");
-        return;
-    }
-    
-    let count = 0;
-    const addPoint = (poly) => {
-        try {
-            let pt = turf.pointOnFeature(poly);
-            let iconHtml = `<span style="background-color: #f43f5e; width:22px; height:22px; display:flex; align-items:center; justify-content:center; color:white; font-size:12px; border-radius:50%; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.3);"><i class="fa-solid fa-lightbulb"></i></span>`;
-            let icon = L.divIcon({ className: 'custom-div-icon', html: iconHtml, iconSize: [22, 22], iconAnchor: [11, 11] });
-            
-            L.marker([pt.geometry.coordinates[1], pt.geometry.coordinates[0]], {icon: icon})
-                .bindPopup(`<div class="p-2"><h3 class="font-bold text-rose-600 border-b pb-1 mb-1"><i class="fa-solid fa-lightbulb mr-1"></i>Rekomendasi Lokasi Baru</h3><p class="text-xs text-gray-600">Titik ini secara strategis berada di area blank spot (belum terlayani) dan direkomendasikan untuk pembangunan fasilitas baru.</p></div>`)
-                .addTo(potentialLayerGroup);
-            count++;
-        } catch(e) {}
-    };
-
-    underservedFeatures.forEach(f => {
-        if (f.geometry.type === 'Polygon') {
-            addPoint(f);
-        } else if (f.geometry.type === 'MultiPolygon') {
-            f.geometry.coordinates.forEach(polyCoords => {
-                const singlePoly = turf.polygon(polyCoords);
-                // Area filter to ignore very small slivers (e.g. < 0.1 sq km)
-                if (turf.area(singlePoly) > 100000) { 
-                    addPoint(singlePoly);
-                }
-            });
-        }
-    });
-    
-    if(count > 0) {
-        alert(`Ditemukan ${count} titik potensial baru untuk menutup area blank spot (underserved).`);
-    } else {
-        alert("Tidak ada blank spot yang cukup luas untuk direkomendasikan lokasi baru.");
-    }
 }
 
 function runGeoprocessing() {
@@ -442,7 +449,10 @@ function runGeoprocessing() {
                     });
 
                     let travelTimeMins = 0;
+                    let nearestFacilityName = "-";
+
                     if (nearestPt) {
+                        nearestFacilityName = nearestPt.properties.nama || nearestPt.properties.jenis || "Fasilitas Terdekat";
                         // Network Distance Simulation (Euclidean * Detour Index)
                         let networkDistance = minDistance * DETOUR_INDEX;
                         travelTimeMins = (networkDistance / SPEED_KMH) * 60; // in minutes
@@ -460,7 +470,8 @@ function runGeoprocessing() {
                         areaKec: areaKec,
                         pctCovered: (areaCovered / areaKec) * 100,
                         travelTime: travelTimeMins,
-                        networkDistance: minDistance * DETOUR_INDEX
+                        networkDistance: minDistance * DETOUR_INDEX,
+                        nearestFacilityName: nearestFacilityName
                     };
                 });
 
@@ -505,7 +516,10 @@ function updateSummary() {
         <div class="flex justify-between border-b pb-1"><span class="text-gray-500">Kecamatan:</span><span class="font-bold text-gray-800">${s.name}</span></div>
         <div class="flex justify-between border-b pb-1"><span class="text-gray-500">Penduduk (2025):</span><span class="font-semibold text-gray-700">${s.pop.toLocaleString('id-ID')} jiwa</span></div>
         <div class="flex justify-between border-b pb-1"><span class="text-gray-500">Area Terlayani (Buffer):</span><span class="font-semibold text-emerald-600">${s.pctCovered.toFixed(1)}%</span></div>
-        <div class="flex justify-between border-b pb-1"><span class="text-gray-500">Waktu ke Fasilitas Terdekat:</span><span class="font-semibold text-amber-600">${Math.round(s.travelTime)} Menit</span></div>
+        <div class="border-b pb-1">
+            <div class="flex justify-between items-start"><span class="text-gray-500 mt-0.5">Fasilitas Terdekat:</span><span class="font-semibold text-gray-700 text-right text-[11px] leading-tight max-w-[140px]">${s.nearestFacilityName}</span></div>
+            <div class="flex justify-between mt-1"><span class="text-gray-500">Waktu Tempuh Isokron:</span><span class="font-semibold text-amber-600">${Math.round(s.travelTime)} Menit</span></div>
+        </div>
         <div class="flex justify-between pt-1 bg-emerald-100 rounded px-1 -mx-1"><span class="text-emerald-800 font-medium">Est. Terlayani:</span><span class="font-bold text-emerald-700">${popServed.toLocaleString('id-ID')} jiwa</span></div>
     `;
 }

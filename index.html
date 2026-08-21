@@ -11,11 +11,36 @@
     <link rel="stylesheet" href="CSS/style.css" />
     
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
-    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
     
+    <!-- MarkerCluster for Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+
     <!-- Turf.js for geoprocessing -->
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
+    <style>
+        /* Mencegah munculnya bounding box (focus ring) saat polygon diklik */
+        path.leaflet-interactive:focus {
+            outline: none !important;
+        }
+
+        /* Menyembunyikan label fasilitas sampai level zoom tertentu (diatur via JS class) */
+        .facility-label {
+            display: none !important;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            color: #333;
+            font-weight: bold;
+            font-size: 10px;
+            white-space: nowrap;
+        }
+        .show-facility-labels .facility-label {
+            display: block !important;
+        }
+    </style>
 </head>
 <body class="bg-gray-50 flex flex-col h-screen overflow-hidden text-gray-800">
 
@@ -34,7 +59,7 @@
                 </div>
                 <!-- Mobile menu button -->
                 <div class="flex items-center md:hidden">
-                    <button id="mobile-menu-btn" class="text-emerald-200 hover:text-white focus:outline-none">
+                    <button id="mobile-menu-btn" onclick="document.getElementById('mobile-menu').classList.toggle('hidden')" class="text-emerald-200 hover:text-white focus:outline-none">
                         <i class="fa-solid fa-bars text-2xl"></i>
                     </button>
                 </div>
@@ -68,11 +93,14 @@
                     </p>
                 </div>
 
-                <!-- Basic Data Layer -->
-                <div>
-                    <h3 class="font-semibold text-sm text-gray-700 mb-2 border-b pb-1">Data Dasar Kota Palembang</h3>
+                <!-- Panel Base Maps & Administrative -->
+                <div class="mb-4">
+                    <h2 class="font-bold text-gray-700 border-b-2 border-emerald-500 pb-1 mb-2 uppercase text-sm tracking-wide flex items-center">
+                        <i class="fa-solid fa-layer-group text-emerald-600 mr-2"></i>Data Dasar Kota Palembang
+                    </h2>
                     <div id="base-controls" class="space-y-2 text-sm">
-                        <!-- Checkboxes will be injected here via JS -->
+                        <div id="kecamatan-control-container"></div>
+                        <div id="pemukiman-control-container"></div>
                     </div>
                 </div>
 
@@ -81,20 +109,6 @@
                     <h3 class="font-semibold text-sm text-gray-700 mb-2 border-b pb-1">Data Fasilitas Pengelolaan Sampah</h3>
                     <div id="facility-controls" class="space-y-2 text-sm">
                         <!-- Checkboxes will be injected here via JS -->
-                    </div>
-                </div>
-
-                <!-- Navigation & Route -->
-                <div class="mt-4">
-                    <h3 class="font-semibold text-sm text-gray-700 mb-2 border-b pb-1">Navigasi Rute Terdekat</h3>
-                    <div class="space-y-2 text-sm text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
-                        <p class="text-[11px] leading-tight">1. Klik lokasi manapun di peta untuk menentukan <b>Titik Awal</b>.<br>2. Klik salah satu fasilitas, lalu pilih <b>Rute ke Sini</b>.</p>
-                        <select id="route-mode" class="w-full border-gray-300 rounded-md p-1.5 border text-xs bg-white">
-                            <option value="driving">Mobil / Motor</option>
-                            <option value="walking">Jalan Kaki</option>
-                            <option value="cycling">Sepeda</option>
-                        </select>
-                        <button onclick="window.clearRoute()" class="w-full bg-white hover:bg-gray-100 text-gray-700 py-1.5 rounded text-xs font-medium transition border shadow-sm"><i class="fa-solid fa-trash mr-1"></i>Hapus Rute & Titik Awal</button>
                     </div>
                 </div>
 
@@ -118,11 +132,6 @@
                         <button id="btn-analyze" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition flex items-center justify-center space-x-2 shadow-sm">
                             <i class="fa-solid fa-gear"></i>
                             <span>Hitung & Analisis</span>
-                        </button>
-                        
-                        <button id="btn-potential" class="w-full bg-rose-500 hover:bg-rose-600 text-white py-2 rounded-lg text-sm font-medium transition flex items-center justify-center space-x-2 shadow-sm">
-                            <i class="fa-solid fa-lightbulb"></i>
-                            <span>Cari Lokasi Potensial Baru</span>
                         </button>
 
                         <button id="btn-clear" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium transition hidden">
