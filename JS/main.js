@@ -72,13 +72,29 @@ function initMap() {
     isochroneLinesGroup.addTo(map);
 
     // Toggle facility labels class based on zoom level (approx > 1:10000 is zoom 15/16)
-    map.on('zoomend', function() {
+    map.on('zoomend moveend', function() {
         if (map.getZoom() >= 16) {
-            document.getElementById('map').classList.add('show-facility-labels');
+            document.getElementById('map').classList.add('show-facility-labels'); setTimeout(resolveTooltipCollisions, 100);
         } else {
             document.getElementById('map').classList.remove('show-facility-labels');
         }
     });
+
+    function resolveTooltipCollisions() {
+        if (map.getZoom() < 16) return;
+        const labels = Array.from(document.querySelectorAll('.facility-label'));
+        labels.forEach(l => { l.style.visibility = 'visible'; l.style.opacity = '1'; l.style.transition = 'opacity 0.2s'; });
+        const rects = [];
+        for (let i = 0; i < labels.length; i++) {
+            const label = labels[i]; const rect = label.getBoundingClientRect();
+            let overlap = false;
+            for (let j = 0; j < rects.length; j++) {
+                const other = rects[j];
+                if (rect.left - 2 < other.right && rect.right + 2 > other.left && rect.top - 2 < other.bottom && rect.bottom + 2 > other.top) { overlap = true; break; }
+            }
+            if (overlap) { label.style.visibility = 'hidden'; label.style.opacity = '0'; } else { rects.push(rect); }
+        }
+    }
 
     // Map click to clear highlight
     map.on('click', function(e) {
@@ -88,11 +104,10 @@ function initMap() {
         }
     });
 
-    // Create custom panes for z-index ordering (400 is leaflet overlayPane)
     map.createPane('kecamatanPane');
-    map.getPane('kecamatanPane').style.zIndex = 400; // Bottom layer
+    map.getPane('kecamatanPane').style.zIndex = 405; // On top of pemukiman
     map.createPane('pemukimanPane');
-    map.getPane('pemukimanPane').style.zIndex = 405; // Above kecamatan
+    map.getPane('pemukimanPane').style.zIndex = 400; // Bottom layer
 
     loadPopulationData().then(async () => {
         await loadPemukimanData(); 
@@ -523,3 +538,154 @@ function updateSummary() {
         <div class="flex justify-between pt-1 bg-emerald-100 rounded px-1 -mx-1"><span class="text-emerald-800 font-medium">Est. Terlayani:</span><span class="font-bold text-emerald-700">${popServed.toLocaleString('id-ID')} jiwa</span></div>
     `;
 }
+
+
+// ==========================================
+// CRUD Opsi Data Fasilitas
+// ==========================================
+
+window.openEditModal = function(layerName, featureId) {
+    const facility = facilitiesData[layerName].geojson.features.find(f => f.properties._id === featureId);
+    if (!facility) return;
+    const p = facility.properties;
+    const coords = facility.geometry.coordinates;
+
+    document.getElementById('edit-modal-title').innerHTML = '<i class="fa-solid fa-pen-to-square mr-2"></i>Edit Fasilitas';
+    document.getElementById('edit-id').value = p._id;
+    document.getElementById('edit-original-layer').value = layerName;
+    
+    const select = document.getElementById('edit-layer');
+    select.innerHTML = facilityConfig.map(c => `<option value="${c.name}" ${c.name === layerName ? 'selected' : ''}>${c.name}</option>`).join('');
+
+    document.getElementById('edit-nama').value = p.nama || '';
+    document.getElementById('edit-jenis').value = p.jenis || '';
+    document.getElementById('edit-kecamatan').value = p.kecamatan || '';
+    document.getElementById('edit-status').value = p.status || 'Beroperasi';
+    document.getElementById('edit-lat').value = coords[1];
+    document.getElementById('edit-lng').value = coords[0];
+
+    toggleModal('modal-edit-facility');
+    map.closePopup();
+};
+
+window.startAddFacility = function() {
+    document.getElementById('edit-modal-title').innerHTML = '<i class="fa-solid fa-plus mr-2"></i>Tambah Fasilitas Baru';
+    document.getElementById('edit-facility-form').reset();
+    document.getElementById('edit-id').value = '';
+    document.getElementById('edit-original-layer').value = '';
+
+    const select = document.getElementById('edit-layer');
+    select.innerHTML = facilityConfig.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+
+    toggleModal('modal-edit-facility');
+};
+
+window.deleteFacility = function(layerName, featureId) {
+    if(!confirm('Apakah Anda yakin ingin menghapus fasilitas ini?')) return;
+    
+    const data = facilitiesData[layerName].geojson;
+    data.features = data.features.filter(f => f.properties._id !== featureId);
+    
+    saveToLocalStorageAndReload(layerName, data);
+};
+
+window.saveFacility = function() {
+    const id = document.getElementById('edit-id').value;
+    const originalLayer = document.getElementById('edit-original-layer').value;
+    const targetLayer = document.getElementById('edit-layer').value;
+    
+    const nama = document.getElementById('edit-nama').value;
+    const jenis = document.getElementById('edit-jenis').value;
+    const kecamatan = document.getElementById('edit-kecamatan').value;
+    const status = document.getElementById('edit-status').value;
+    const lat = parseFloat(document.getElementById('edit-lat').value);
+    const lng = parseFloat(document.getElementById('edit-lng').value);
+
+    let feature = null;
+
+    if (id && originalLayer) {
+        const data = facilitiesData[originalLayer].geojson;
+        const index = data.features.findIndex(f => f.properties._id === id);
+        if (index > -1) {
+            if (originalLayer !== targetLayer) {
+                feature = data.features.splice(index, 1)[0];
+                saveToLocalStorageAndReload(originalLayer, data);
+            } else {
+                feature = data.features[index];
+            }
+        }
+    }
+
+    if (!feature) {
+        feature = {
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [] },
+            properties: { _id: Math.random().toString(36).substr(2, 9) }
+        };
+    }
+
+    feature.properties.nama = nama;
+    feature.properties.jenis = jenis;
+    feature.properties.kecamatan = kecamatan;
+    feature.properties.status = status;
+    feature.geometry.coordinates = [lng, lat];
+
+    const targetData = facilitiesData[targetLayer].geojson;
+    if (!id || originalLayer !== targetLayer) {
+        targetData.features.push(feature);
+    }
+    
+    saveToLocalStorageAndReload(targetLayer, targetData);
+    toggleModal('modal-edit-facility');
+};
+
+function saveToLocalStorageAndReload(layerName, geojsonData) {
+    localStorage.setItem('ecomap_layer_' + layerName, JSON.stringify(geojsonData));
+    location.reload();
+}
+
+window.resetAllEdits = function() {
+    if(!confirm('Hapus semua perubahan dan kembalikan data ke kondisi asli?')) return;
+    facilityConfig.forEach(c => localStorage.removeItem('ecomap_layer_' + c.name));
+    location.reload();
+};
+
+window.isAddingFacility = false;
+window.pickLocationOnMap = function() {
+    toggleModal('modal-edit-facility');
+    document.getElementById('instruction-overlay').classList.remove('hidden');
+    map.getContainer().style.cursor = 'crosshair';
+    window.isAddingFacility = true;
+};
+
+window.cancelPickLocation = function() {
+    document.getElementById('instruction-overlay').classList.add('hidden');
+    map.getContainer().style.cursor = '';
+    window.isAddingFacility = false;
+    toggleModal('modal-edit-facility');
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        if(map) {
+            map.on('click', function(e) {
+                if (window.isAddingFacility) {
+                    document.getElementById('edit-lat').value = e.latlng.lat.toFixed(6);
+                    document.getElementById('edit-lng').value = e.latlng.lng.toFixed(6);
+                    
+                    document.getElementById('instruction-overlay').classList.add('hidden');
+                    map.getContainer().style.cursor = '';
+                    window.isAddingFacility = false;
+                    
+                    toggleModal('modal-edit-facility');
+                }
+            });
+        }
+    }, 1000);
+});
+
+
+
+
+
+
