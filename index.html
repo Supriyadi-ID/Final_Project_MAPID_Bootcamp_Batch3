@@ -28,17 +28,16 @@
 
         /* Menyembunyikan label fasilitas sampai level zoom tertentu (diatur via JS class) */
         .facility-label {
-            display: none !important;
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            color: #333;
-            font-weight: bold;
-            font-size: 10px;
+            visibility: hidden;
+            opacity: 0;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #9ca3af;
+            border-radius: 3px;
+            color: #374151;
+            padding: 1px 4px;
+            font-size: 9px;
             white-space: nowrap;
-        }
-        .show-facility-labels .facility-label {
-            display: block !important;
+            z-index: 1000;
         }
     </style>
 </head>
@@ -95,8 +94,8 @@
 
                 <!-- Panel Base Maps & Administrative -->
                 <div class="mb-4">
-                    <h2 class="font-bold text-gray-700 border-b-2 border-emerald-500 pb-1 mb-2 uppercase text-sm tracking-wide flex items-center">
-                        <i class="fa-solid fa-layer-group text-emerald-600 mr-2"></i>Data Dasar Kota Palembang
+                    <h2 class="font-bold text-gray-700 border-b-2 border-emerald-500 pb-1 mb-2 uppercase text-[11px] tracking-wide flex items-center">
+                        Data Dasar Kota Palembang
                     </h2>
                     <div id="base-controls" class="space-y-2 text-sm">
                         <div id="kecamatan-control-container"></div>
@@ -106,7 +105,7 @@
 
                 <!-- Layer Filter -->
                 <div class="mt-4">
-                    <h3 class="font-semibold text-sm text-gray-700 mb-2 border-b pb-1">Data Fasilitas Pengelolaan Sampah</h3>
+                    <h2 class="font-bold text-gray-700 border-b-2 border-emerald-500 pb-1 mb-2 uppercase text-[11px] tracking-wide flex items-center">Data Fasilitas Pengelolaan Sampah</h2>
                     <div id="facility-controls" class="space-y-2 text-sm">
                         <!-- Checkboxes will be injected here via JS -->
                     </div>
@@ -262,7 +261,27 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Kecamatan</label>
-                    <input type="text" id="edit-kecamatan" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-sm">
+                    <select id="edit-kecamatan" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-sm">
+                        <option value="">-- Pilih Kecamatan --</option>
+                        <option value="ALANG-ALANG LEBAR" class="capitalize">alang-alang lebar</option>
+                        <option value="BUKIT KECIL" class="capitalize">bukit kecil</option>
+                        <option value="GANDUS" class="capitalize">gandus</option>
+                        <option value="ILIR BARAT I" class="capitalize">ilir barat i</option>
+                        <option value="ILIR BARAT II" class="capitalize">ilir barat ii</option>
+                        <option value="ILIR TIMUR I" class="capitalize">ilir timur i</option>
+                        <option value="ILIR TIMUR II" class="capitalize">ilir timur ii</option>
+                        <option value="ILIR TIMUR III" class="capitalize">ilir timur iii</option>
+                        <option value="JAKABARING" class="capitalize">jakabaring</option>
+                        <option value="KALIDONI" class="capitalize">kalidoni</option>
+                        <option value="KEMUNING" class="capitalize">kemuning</option>
+                        <option value="KERTAPATI" class="capitalize">kertapati</option>
+                        <option value="PLAJU" class="capitalize">plaju</option>
+                        <option value="SAKO" class="capitalize">sako</option>
+                        <option value="SEBERANG ULU I" class="capitalize">seberang ulu i</option>
+                        <option value="SEBERANG ULU II" class="capitalize">seberang ulu ii</option>
+                        <option value="SEMATANG BORANG" class="capitalize">sematang borang</option>
+                        <option value="SUKARAMI" class="capitalize">sukarami</option>
+                    </select>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Status Operasional</label>
@@ -296,7 +315,12 @@
         <button onclick="cancelPickLocation()" class="ml-4 bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-xs font-bold">Batal</button>
     </div>
 
-    <script src="JS/main.js"></script>
+    <!-- Script Aplikasi -->
+    <script src="JS/map.js"></script>
+    <script src="JS/api.js"></script>
+    <script src="JS/analysis.js"></script>
+    <script src="JS/ui.js"></script>
+    <script src="JS/crud.js"></script>
     <script>
         function toggleModal(modalId) {
             document.getElementById(modalId).classList.toggle('hidden');
